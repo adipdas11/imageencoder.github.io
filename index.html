@@ -10,8 +10,7 @@
     --bg:#0f1115; --grad1:#0b0d12; --grad2:#121520;
     --panel:#141823; --bar:#10131b; --bar-brd:#1f2432;
     --txt:#e8ecf3; --muted:#a7b0c0;
-    --pad:12px;
-    --btn-radius:12px;
+    --pad:12px; --btn-radius:12px;
   }
   *{ box-sizing:border-box; }
   html, body { height: 100svh; margin: 0; overflow: hidden; }
@@ -24,12 +23,8 @@
   }
   .app{ height:100%; display:flex; flex-direction:column; overflow:hidden; }
 
-  /* Stage (image area) */
-  #stage{
-    flex:1; display:flex; align-items:center; justify-content:center;
-    padding: var(--pad);
-    overflow:hidden;
-  }
+  /* Stage */
+  #stage{ flex:1; display:flex; align-items:center; justify-content:center; padding: var(--pad); overflow:hidden; }
   .stage-card{
     display:flex; flex-direction:column; align-items:center;
     max-width: 100%;
@@ -38,20 +33,14 @@
     border-radius: 16px; padding: 14px;
     box-shadow: 0 10px 30px rgba(0,0,0,.35); backdrop-filter: blur(6px);
   }
-
-  /* Canvas: JS sets exact CSS width/height (keeps real image ratio, no stretch) */
   canvas{
-    display:block;
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
-    background:#0b0e15;
-    margin: 0;
-    max-width: 100%;
-    max-height: 100%;
+    display:block; border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; background:#0b0e15; margin: 0;
+    max-width: 100%; max-height: 100%;
   }
   #hint{ margin-top:10px; color:var(--muted); font-size:12.5px; text-align:center; }
 
-  /* Bottom action bar — one line, equal-size buttons, responsive */
+  /* Bottom bar */
   #bar{
     position: fixed; left:0; right:0; bottom:0;
     display:flex; gap:8px; flex-wrap:nowrap;
@@ -59,8 +48,7 @@
     padding: clamp(6px, 1.2vh, 10px) clamp(var(--pad), 3vw, 20px) calc(clamp(6px,1.2vh,10px) + env(safe-area-inset-bottom));
     background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--bar);
     border-top: 1px solid var(--bar-brd);
-    box-shadow: 0 -8px 24px rgba(0,0,0,.35); backdrop-filter: blur(8px);
-    z-index: 10;
+    box-shadow: 0 -8px 24px rgba(0,0,0,.35); backdrop-filter: blur(8px); z-index:10;
   }
   .action{
     appearance:none; border:1px solid rgba(255,255,255,.12);
@@ -105,7 +93,7 @@
   </div>
 
 <script>
-// ===== Your fixed 8-digit number (CHANGE THIS) =====
+// ===== Fixed key (use same value on all devices) =====
 const SEED_8_DIGITS = 12345678;
 
 // ===== DOM =====
@@ -123,22 +111,22 @@ const card      = document.getElementById('card');
 
 // ===== State =====
 let hasImage = false;
-let isScrambled = null;    // null after upload; true/false after first action
-let imgW = 0, imgH = 0;    // natural image size
-let dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1)); // cap for memory
+let isScrambled = null;
+let imgW = 0, imgH = 0;
+let dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
 
-// ===== Endianness (for 32-bit RGB/Alpha masking) =====
+// ===== Endianness masks =====
 const LITTLE   = new Uint8Array(new Uint32Array([0x01020304]).buffer)[0] === 0x04;
 const RGB_MASK = LITTLE ? 0x00FFFFFF : 0xFFFFFF00;
 const A_MASK   = LITTLE ? 0xFF000000 : 0x000000FF;
 
-// ===== FAST PRNG: xorshift32 =====
+// ===== Fast PRNG (xorshift32) =====
 function makeXorShift32(seed) {
-  let x = (seed >>> 0) || 0x6D2B79F5; // ensure non-zero
+  let x = (seed >>> 0) || 0x6D2B79F5;
   return () => { x ^= (x << 13); x ^= (x >>> 17); x ^= (x << 5); return x >>> 0; };
 }
 
-// ===== Scramble/descramble (v2 FAST): XOR RGB per 32-bit pixel (preserve alpha) =====
+// ===== Scramble/descramble (v2, XOR RGB, preserve alpha) =====
 function applyScramble(seed) {
   const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const u32 = new Uint32Array(img.data.buffer, 0, img.data.length >>> 2);
@@ -150,55 +138,35 @@ function applyScramble(seed) {
   ctx.putImageData(img, 0, 0);
 }
 
-// ===== Controls =====
+// ===== Buttons =====
 function setButtons() {
-  if (!hasImage) {
-    encodeBtn.disabled = decodeBtn.disabled = shareBtn.disabled = resetBtn.disabled = true;
-    return;
-  }
-  if (isScrambled === null) {
-    encodeBtn.disabled = false; decodeBtn.disabled = false;
-  } else {
-    encodeBtn.disabled = isScrambled;
-    decodeBtn.disabled = !isScrambled;
-  }
+  if (!hasImage) { encodeBtn.disabled = decodeBtn.disabled = shareBtn.disabled = resetBtn.disabled = true; return; }
+  if (isScrambled === null) { encodeBtn.disabled = false; decodeBtn.disabled = false; }
+  else { encodeBtn.disabled = isScrambled; decodeBtn.disabled = !isScrambled; }
   shareBtn.disabled = false; resetBtn.disabled = false;
 }
 
-/* === Helpers to measure paddings/borders and size the canvas to fit the screen === */
+// ===== Layout helpers =====
 function px(n){ return isNaN(n) ? 0 : n; }
 function getBoxSpacing(el){
   const s = getComputedStyle(el);
   return {
-    pl: px(parseFloat(s.paddingLeft)),
-    pr: px(parseFloat(s.paddingRight)),
-    pt: px(parseFloat(s.paddingTop)),
-    pb: px(parseFloat(s.paddingBottom)),
-    bl: px(parseFloat(s.borderLeftWidth)),
-    br: px(parseFloat(s.borderRightWidth)),
-    bt: px(parseFloat(s.borderTopWidth)),
-    bb: px(parseFloat(s.borderBottomWidth)),
+    pl: px(parseFloat(s.paddingLeft)), pr: px(parseFloat(s.paddingRight)),
+    pt: px(parseFloat(s.paddingTop)),  pb: px(parseFloat(s.paddingBottom)),
+    bl: px(parseFloat(s.borderLeftWidth)), br: px(parseFloat(s.borderRightWidth)),
+    bt: px(parseFloat(s.borderTopWidth)), bb: px(parseFloat(s.borderBottomWidth)),
   };
 }
-
 function sizeViewerToImage(){
   const vw = document.documentElement.clientWidth;
   const vh = document.documentElement.clientHeight;
-
   const barH = bar.getBoundingClientRect().height;
   const sb = getBoxSpacing(stage);
   const cb = getBoxSpacing(card);
   const hintH = hint.getBoundingClientRect().height || 0;
 
-  const availW = Math.max(
-    1,
-    vw - (sb.pl + sb.pr) - (cb.pl + cb.pr) - (cb.bl + cb.br) - 2
-  );
-
-  const availH = Math.max(
-    1,
-    vh - barH - (sb.pt + sb.pb) - (cb.pt + cb.pb) - (cb.bt + cb.bb) - hintH - 8
-  );
+  const availW = Math.max(1, vw - (sb.pl + sb.pr) - (cb.pl + cb.pr) - (cb.bl + cb.br) - 2);
+  const availH = Math.max(1, vh - barH - (sb.pt + sb.pb) - (cb.pt + cb.pb) - (cb.bt + cb.bb) - hintH - 8);
 
   if (!imgW || !imgH) {
     const w = Math.min(availW, 520), h = Math.min(availH, 320);
@@ -206,111 +174,99 @@ function sizeViewerToImage(){
     canvas.style.height = Math.max(90,  Math.floor(h)) + 'px';
     return;
   }
-
   const scale = Math.min(availW / imgW, availH / imgH, 1);
   const dispW = Math.max(1, Math.floor(imgW * scale));
   const dispH = Math.max(1, Math.floor(imgH * scale));
   canvas.style.width  = dispW + 'px';
   canvas.style.height = dispH + 'px';
 }
-
 function adjustStagePadding(){
   stage.style.paddingBottom = (bar.getBoundingClientRect().height + 6) + 'px';
   sizeViewerToImage();
 }
+window.addEventListener('resize', () => { dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1)); adjustStagePadding(); });
+window.addEventListener('orientationchange', () => setTimeout(() => { dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1)); adjustStagePadding(); }, 60));
 
-window.addEventListener('resize', () => {
-  dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-  adjustStagePadding();
-});
-window.addEventListener('orientationchange', () => setTimeout(() => {
-  dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-  adjustStagePadding();
-}, 60));
-
-/* === High-DPI draw (crisp) === */
+// ===== Hi-DPI draw =====
 function drawImageHiDPI(img){
-  imgW = img.naturalWidth;
-  imgH = img.naturalHeight;
-
-  // Backing store at DPR scale
+  imgW = img.naturalWidth; imgH = img.naturalHeight;
   canvas.width  = Math.max(1, Math.floor(imgW * dpr));
   canvas.height = Math.max(1, Math.floor(imgH * dpr));
-
   ctx.setTransform(1,0,0,1,0,0);
   ctx.imageSmoothingEnabled = true;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.drawImage(img, 0, 0, imgW, imgH);
-
   sizeViewerToImage();
 }
 
-/* === Upload === */
+// ===== Upload =====
 fileInput.addEventListener('change', e => {
   const file = e.target.files?.[0];
   if (!file) return;
-
   const url = URL.createObjectURL(file);
   const img = new Image();
   img.onload = () => {
     drawImageHiDPI(img);
-
-    hasImage = true;
-    isScrambled = null;     // enable both Encode/Decode
-    setButtons();
+    hasImage = true; isScrambled = null; setButtons();
     hint.textContent = `Loaded: ${file.name} (${imgW}×${imgH}). Choose Encode (original) or Decode (scrambled).`;
-
-    URL.revokeObjectURL(url);
-    fileInput.value = "";   // allow re-selecting same file
-    adjustStagePadding();
+    URL.revokeObjectURL(url); fileInput.value = ""; adjustStagePadding();
   };
   img.src = url;
 });
 
-/* === Encode / Decode === */
+// ===== Encode / Decode =====
 encodeBtn.addEventListener('click', () => {
   if (!hasImage) return;
-  applyScramble(SEED_8_DIGITS);
-  isScrambled = true;
-  setButtons();
+  applyScramble(SEED_8_DIGITS); isScrambled = true; setButtons();
   hint.textContent = 'Scrambled. Share to send or Save Image.';
 });
-
 decodeBtn.addEventListener('click', () => {
   if (!hasImage) return;
-  applyScramble(SEED_8_DIGITS);
-  isScrambled = false;
-  setButtons();
+  applyScramble(SEED_8_DIGITS); isScrambled = false; setButtons();
   hint.textContent = 'Decoded (restored). Share if you want to save it.';
 });
 
-/* === Share (PNG via Share Sheet) === */
+// ===== Share (robust) =====
 shareBtn.addEventListener('click', async () => {
   if (!hasImage) return;
-  const blob = await new Promise(r => canvas.toBlob(r, 'image/png', 1.0));
-  const file = new File([blob], 'image.png', { type: 'image/png' });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'Image' }); return; } catch(_) {}
+  try {
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png', 1.0));
+    const file = new File([blob], 'image.png', { type: 'image/png' });
+
+    // Try native share with file (iOS 16+/Android 10+)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Image' });
+      return;
+    }
+
+    // Fallback: open PNG in a new tab (iOS: long-press → Save Image / Share)
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.target = '_blank';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (err) {
+    // Last-chance fallback: data URL (some very old browsers)
+    try {
+      const dataUrl = canvas.toDataURL('image/png', 1.0);
+      window.open(dataUrl, '_blank');
+    } catch (_) {
+      alert('Unable to share. Try long-pressing the opened image to Save/Share.');
+    }
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.target = '_blank';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
 });
 
-/* === Reset === */
+// ===== Reset =====
 resetBtn.addEventListener('click', () => {
   hasImage = false; isScrambled = null; imgW = imgH = 0;
   canvas.width = 2; canvas.height = 2;
   ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height);
-  fileInput.value = "";
-  setButtons();
-  hint.textContent = 'Cleared. Upload an image to begin.';
-  adjustStagePadding();
+  fileInput.value = ""; setButtons();
+  hint.textContent = 'Cleared. Upload an image to begin.'; adjustStagePadding();
 });
 
-/* Initial layout */
+// Initial layout
 adjustStagePadding();
 </script>
 </body>
