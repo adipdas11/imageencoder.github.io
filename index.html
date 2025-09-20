@@ -5,98 +5,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>TilePad — Tile Shuffle Encode/Decode (WhatsApp‑robust)</title>
+  <title>TilePad — Simple</title>
   <style>
-    :root{
-      --bg:#0b0f14; --card:#111827; --muted:#9aa4b2; --text:#e5ecf3; --acc:#7c3aed; --acc2:#22d3ee; --danger:#ef4444; --good:#22c55e;
-      --ring:0 0 0 2px rgba(124,58,237,.45), 0 10px 30px rgba(124,58,237,.15);
-      --tb: 96px; /* toolbar height fallback */
-    }
+    :root{ --bg:#0b0f14; --card:#0f172a; --text:#e5ecf3; --muted:#98a2b3; --acc:#7c3aed; --good:#22c55e; --danger:#ef4444; --tb:72px; }
     *{box-sizing:border-box}
-    html,body{margin:0;height:100%;background:linear-gradient(180deg,#0b0f14, #0b0f14 40%, #0d1320 100%);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;overflow-x:hidden}
-    .app{min-height:100%;display:flex;flex-direction:column;}
-    header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,rgba(13,19,32,.9),rgba(13,19,32,.6));backdrop-filter: blur(10px);padding: max(12px, env(safe-area-inset-top)) 16px 12px;border-bottom:1px solid rgba(255,255,255,.06);}    
-    h1{margin:0;font-size:clamp(16px, 2.6vw, 20px);letter-spacing:.3px;display:flex;align-items:center;gap:10px;font-weight:700}
-    h1 .dot{width:8px;height:8px;border-radius:999px;background:linear-gradient(135deg,var(--acc),var(--acc2));box-shadow:0 0 20px rgba(34,211,238,.65)}
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,sans-serif;overflow:hidden}
+    .app{min-height:100vh;display:flex;flex-direction:column;overflow:hidden}
 
-    .stage{flex:1;display:flex;flex-direction:column;gap:12px;padding:12px 16px 0}
-    .viewer{position:relative;background:radial-gradient(1200px 400px at 50% -200px, rgba(124,58,237,.15), transparent),
-                          radial-gradient(600px 200px at 10% 0, rgba(34,211,238,.1), transparent),
-                          var(--card);
-            border:1px solid rgba(255,255,255,.06);border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.3);
-            min-height:320px; padding-bottom: calc(var(--tb) + 12px)}
+    /* Viewer fills all available space */
+    .viewer{position:relative;flex:1;display:flex;align-items:center;justify-content:center;padding:8px 8px calc(var(--tb) + 8px);background:linear-gradient(180deg,#0f172a,#0b0f14)}
+    .frame{position:relative;display:flex;align-items:center;justify-content:center;width:min(calc(100vw - 24px), 820px);height:calc(100vh - var(--tb) - 24px - env(safe-area-inset-bottom));min-height:320px;background:radial-gradient(800px 240px at 50% -120px, rgba(124,58,237,.12), transparent),var(--card);border:1px solid rgba(255,255,255,.08);border-radius:16px;box-shadow:0 12px 36px rgba(0,0,0,.35);overflow:hidden}
+    canvas{display:block;max-width:100%;max-height:100%;width:auto;height:auto;background:repeating-conic-gradient(from 45deg, rgba(255,255,255,.04) 0 10deg, transparent 10deg 20deg) center/40px 40px;border-radius:8px}
 
-    /* Responsive toolbar: auto-fit columns; wraps as needed; safe-area aware */
-    .viewer .toolbar{position:absolute;left:8px;right:8px;bottom:8px;display:grid;gap:8px;
-      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-      max-width: calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right) - 16px);
-      padding-bottom: env(safe-area-inset-bottom)}
-
-    .btn{appearance:none;border:none;border-radius:14px;padding:clamp(8px,1.8vw,12px) clamp(8px,1.6vw,12px);font-weight:700;color:var(--text);
-         background:linear-gradient(180deg,#1a2435,#141c2b);border:1px solid rgba(255,255,255,.08);
-         box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;gap:8px;
-         transition:transform .06s ease, box-shadow .2s ease;touch-action:manipulation;font-size:clamp(12px,2.8vw,14px)}
+    /* Bottom toolbar: exactly 4 equal buttons, responsive */
+    .toolbar{position:fixed;left:0;right:0;bottom:0;z-index:10;background:rgba(10,14,22,.75);backdrop-filter:blur(8px);border-top:1px solid rgba(255,255,255,.08);padding:8px max(8px, env(safe-area-inset-left)) max(8px, calc(env(safe-area-inset-bottom) + 8px)) max(8px, env(safe-area-inset-right));}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;max-width:900px;margin:0 auto}
+    .btn{appearance:none;border:none;border-radius:14px;padding:clamp(10px,2.5vh,14px);font-weight:700;color:var(--text);background:linear-gradient(180deg,#1a2435,#141c2b);border:1px solid rgba(255,255,255,.08);box-shadow:0 6px 18px rgba(0,0,0,.25);transition:transform .06s ease, box-shadow .2s ease;touch-action:manipulation;font-size:clamp(14px,2.6vw,16px)}
     .btn:active{transform:translateY(1px)}
-    .btn.primary{background:linear-gradient(180deg,#2a3754,#1b2538);border-color:rgba(124,58,237,.45);box-shadow:var(--ring)}
-    .btn.danger{background:linear-gradient(180deg,#3a1f25,#2a1417);border-color:rgba(239,68,68,.4);}
-    .btn.good{background:linear-gradient(180deg,#193323,#13281b);border-color:rgba(34,197,94,.4);}
-    .btn[disabled]{opacity:.5;filter:saturate(.5);pointer-events:none}
-    .btn .ico{width:clamp(14px,2.6vw,18px);height:clamp(14px,2.6vw,18px);opacity:.9}
+    .btn.primary{border-color:rgba(124,58,237,.45);}
+    .btn.good{border-color:rgba(34,197,94,.45);}
+    .btn[disabled]{opacity:.55;filter:saturate(.6);pointer-events:none}
 
-    canvas{display:block;width:100%;height:auto;max-height:62vh;object-fit:contain;background:
-      repeating-conic-gradient(from 45deg, rgba(255,255,255,.05) 0 10deg, transparent 10deg 20deg) center/40px 40px}
-
-    .meta{display:flex;align-items:center;gap:10px;padding:8px 2px 12px;flex-wrap:wrap}
-    .meta .chip{font-size:12px;color:var(--muted);background:rgba(255,255,255,.05);padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.06)}
-
-    .footer{position:sticky;bottom:0;z-index:10;background:linear-gradient(0deg,rgba(13,19,32,.9),rgba(13,19,32,.6));
-            backdrop-filter: blur(10px); padding:12px 16px max(12px, env(safe-area-inset-bottom)); border-top:1px solid rgba(255,255,255,.06)}
-
-    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-
-    .toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);
-           background:#0b1220;color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:12px;
-           padding:10px 14px;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .25s ease;max-width:90%;text-align:center}
+    /* Toast */
+    .toast{position:fixed;left:50%;bottom:calc(64px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#0b1220;color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px 14px;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .25s ease;max-width:90%;text-align:center}
     .toast.show{opacity:1}
-
-    @media (min-width: 560px){ canvas{max-height:70vh} }
   </style>
 </head>
 <body>
 <div class="app">
-  <header>
-    <h1><span class="dot"></span> TilePad <span style="color:var(--muted);font-weight:600">· Tile Shuffle</span></h1>
-  </header>
-
-  <main class="stage" role="main">
-    <section class="viewer" aria-label="Image viewer">
-      <canvas id="canvas" aria-label="Image canvas" width="640" height="360"></canvas>
-      <div id="placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:600;letter-spacing:.2px;pointer-events:none">Tap <em style='color:var(--text);font-style:normal'>Upload</em> to start</div>
-      <div class="toolbar" id="toolbar">
-        <button id="btnUpload" class="btn primary" title="Upload image">Upload</button>
-        <button id="btnEncode" class="btn" title="Encode (shuffle tiles)">Encode</button>
-        <button id="btnDecode" class="btn" title="Decode (unshuffle)">Decode</button>
-        <button id="btnShare" class="btn good" title="Share current image">Share</button>
-        <button id="btnReset" class="btn danger" title="Reset">Reset</button>
-      </div>
-      <input id="file" type="file" accept="image/*" class="sr-only" />
-    </section>
-
-    <div class="meta">
-      <span id="status" class="chip">No image loaded</span>
-      <span id="dim" class="chip">–</span>
-      <label class="chip" style="display:flex;align-items:center;gap:8px">
-        <input id="normalize" type="checkbox" checked /> Normalize for WhatsApp
-      </label>
-      <button id="btnTests" class="btn" style="margin-left:auto">Run Self‑Test</button>
+  <main class="viewer" role="main" aria-label="Image viewer">
+    <div id="frame" class="frame" aria-label="Image window">
+      <canvas id="canvas" aria-label="Image canvas"></canvas>
     </div>
+    <input id="file" type="file" accept="image/*,.heic,.heif,.avif" class="sr-only" hidden />
   </main>
 
-  <footer class="footer">
-    <div style="font-size:12px;color:var(--muted);line-height:1.4">
-      Encode shuffles/rotates tiles so it remains decodable even after WhatsApp photo compression. Normalization ensures consistent size.
+  <nav class="toolbar" aria-label="Controls">
+    <div class="grid">
+      <button id="btnUpload" class="btn primary" title="Upload image">Upload</button>
+      <button id="btnEncode" class="btn" title="Encode (shuffle)">Encode</button>
+      <button id="btnDecode" class="btn" title="Decode (unshuffle)">Decode</button>
+      <button id="btnShare"  class="btn good" title="Share">Share</button>
     </div>
-  </footer>
+  </nav>
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -104,235 +55,96 @@
 <script>
 (() => {
   'use strict';
-  // --- Fixed parameters (keep consistent across devices) ---
-  const TILE = 32;              // tile size in pixels
-  const LONG_EDGE = 1280;       // target long edge for WhatsApp normalization
-  const SEED = 0x41C0FFEE;      // deterministic PRNG seed
+  // ---- Parameters (robust defaults) ----
+  const TILE = 32;          // tile size (px)
+  const LONG_EDGE = 1280;   // normalize long edge for cross-device consistency
+  const SEED = 0x41C0FFEE;  // deterministic plan
 
-  // xorshift32 PRNG
-  function* prng(seed){
-    let x = seed >>> 0;
-    while (true){ x ^= x << 13; x >>>= 0; x ^= x >>> 17; x >>>= 0; x ^= x << 5; x >>>= 0; yield x >>> 0; }
-  }
-
-  // Deterministic permutation & orientation from grid size
+  // PRNG
+  function* prng(seed){ let x=seed>>>0; while(true){ x^=x<<13; x>>>=0; x^=x>>>17; x>>>=0; x^=x<<5; x>>>=0; yield x>>>0; } }
   function makePlan(cols, rows){
-    const n = cols*rows;
-    const order = Array.from({length:n}, (_,i)=>i);
-    const p = prng(SEED ^ cols ^ (rows<<16));
-    // Fisher-Yates
-    for (let i=n-1;i>0;i--){ const r = p.next().value % (i+1); const t=order[i]; order[i]=order[r]; order[r]=t; }
-    // Orientation per tile: 0,1,2,3 = rotate 0,90,180,270
-    const rot = new Uint8Array(n);
-    for (let i=0;i<n;i++) rot[i] = (p.next().value >>> 0) & 3;
-    return { order, rot };
+    const n = cols*rows, order = Array.from({length:n},(_,i)=>i); const p = prng(SEED ^ cols ^ (rows<<16));
+    for (let i=n-1;i>0;i--){ const r=p.next().value % (i+1); [order[i],order[r]]=[order[r],order[i]]; }
+    const rot = new Uint8Array(n); for (let i=0;i<n;i++) rot[i]=(p.next().value)&3; return {order,rot};
   }
 
-  // Helpers
-  const $ = sel => document.querySelector(sel);
-  const canvas = $('#canvas');
-  const ctx = canvas.getContext('2d', { willReadFrequently:true });
-  const work = document.createElement('canvas');
-  const wctx = work.getContext('2d', { willReadFrequently:true });
-
+  // DOM
+  const $ = s=>document.querySelector(s);
+  const canvas = $('#canvas'); const ctx = canvas.getContext('2d', { willReadFrequently:true });
+  const work = document.createElement('canvas'); const wctx = work.getContext('2d', { willReadFrequently:true });
   const input = $('#file');
-  const status = $('#status');
-  const dim = $('#dim');
+  const btnUpload=$('#btnUpload'), btnEncode=$('#btnEncode'), btnDecode=$('#btnDecode'), btnShare=$('#btnShare');
   const toastEl = $('#toast');
-  const viewer = document.querySelector('.viewer');
-  const normalizeChk = $('#normalize');
+  const toolbar = document.querySelector('.toolbar');
+  const frame = document.querySelector('#frame');
 
-  const btnUpload = $('#btnUpload');
-  const btnEncode = $('#btnEncode');
-  const btnDecode = $('#btnDecode');
-  const btnShare  = $('#btnShare');
-  const btnReset  = $('#btnReset');
-  const btnTests  = $('#btnTests');
+  // State
+  let hasImage=false, encoded=false; let naturalW=0,naturalH=0; let cols=0,rows=0; let plan=null;
 
-  let hasImage=false, encoded=false; let naturalW=0, naturalH=0; let cols=0, rows=0; let plan=null;
-
-  function showToast(t){ toastEl.textContent=t; toastEl.classList.add('show'); clearTimeout(showToast._t); showToast._t=setTimeout(()=>toastEl.classList.remove('show'),1600); }
-  function setStatus(t){ status.textContent=t; }
-
+  // UI helpers
+  function showToast(t){ toastEl.textContent=t; toastEl.classList.add('show'); clearTimeout(showToast._t); showToast._t=setTimeout(()=>toastEl.classList.remove('show'),1700); }
+  function updateButtons(){ btnEncode.disabled=!hasImage; btnDecode.disabled=!hasImage; btnShare.disabled=!hasImage; }
   function fitToCanvas(w,h){
-    const maxW = Math.min(viewer.clientWidth-2, 4096);
-    const maxH = Math.min(Math.max(window.innerHeight*0.62, 280), 4096);
-    const s = Math.min(maxW/w, maxH/h, 1);
-    const cw = Math.max(1, Math.round(w*s));
-    const ch = Math.max(1, Math.round(h*s));
-    canvas.style.width=cw+'px'; canvas.style.height=ch+'px'; canvas.width=cw; canvas.height=ch; ctx.setTransform(1,0,0,1,0,0);
+    const parent = frame || canvas.parentElement;
+    const styles = getComputedStyle(parent);
+    const padTop = parseFloat(styles.paddingTop)||0;
+    const padBottom = parseFloat(styles.paddingBottom)||0;
+    const padLeft = parseFloat(styles.paddingLeft)||0;
+    const padRight = parseFloat(styles.paddingRight)||0;
+    const availW = Math.max(1, parent.clientWidth - padLeft - padRight);
+    const availH = Math.max(1, parent.clientHeight - padTop - padBottom);
+    const s = Math.min(availW / w, availH / h);
+    const tw = Math.max(1, Math.round(w * s));
+    const th = Math.max(1, Math.round(h * s));
+    canvas.width = tw; canvas.height = th;
   }
-  function redraw(){ fitToCanvas(naturalW,naturalH); ctx.clearRect(0,0,canvas.width,canvas.height); ctx.drawImage(work,0,0,canvas.width,canvas.height); }
+  function redraw(){ if(!hasImage) return; fitToCanvas(naturalW,naturalH); ctx.clearRect(0,0,canvas.width,canvas.height); ctx.drawImage(work,0,0,canvas.width,canvas.height); }
 
-  function normalizeImage(bmp){
+  // Robust loaders
+  async function loadBitmapFromFile(file){
+    const type=(file.type||'').toLowerCase(); const name=(file.name||'').toLowerCase(); const isHeicLike=/heic|heif/.test(name)||/image\/(heic|heif)/.test(type);
+    if(!isHeicLike && 'createImageBitmap' in window){ try{ return await createImageBitmap(file); }catch(e){ console.warn('createImageBitmap failed; fallback', e); } }
+    return await new Promise((resolve, reject)=>{ const url=URL.createObjectURL(file); const img=new Image(); img.onload=()=>{ URL.revokeObjectURL(url); resolve(img); }; img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('decode-failed')); }; try{ img.decoding='async'; }catch{} img.src=url; });
+  }
+
+  function normalizeIntoWork(bmp){
     let w=bmp.width||bmp.naturalWidth, h=bmp.height||bmp.naturalHeight;
-    const scale = Math.min(1, LONG_EDGE/Math.max(w,h)); // downscale only
-    const w1 = Math.round(w*scale), h1=Math.round(h*scale);
-    // Quantize to TILE by center-cropping
-    const wT = Math.max(TILE, Math.floor(w1/TILE)*TILE);
-    const hT = Math.max(TILE, Math.floor(h1/TILE)*TILE);
-    const tmp = document.createElement('canvas'); tmp.width=w1; tmp.height=h1; const tx=tmp.getContext('2d');
-    tx.drawImage(bmp, 0,0,w1,h1);
-    const sx = Math.floor((w1 - wT)/2), sy=Math.floor((h1 - hT)/2);
-    work.width=wT; work.height=hT; wctx.clearRect(0,0,wT,hT);
-    wctx.drawImage(tmp, sx, sy, wT, hT, 0,0, wT, hT);
-    naturalW=wT; naturalH=hT; cols=Math.floor(naturalW/TILE); rows=Math.floor(naturalH/TILE);
-  }
-  function loadExact(bmp){
-    // No normalization; just crop to TILE grid (center)
-    let w=bmp.width||bmp.naturalWidth, h=bmp.height||bmp.naturalHeight;
-    const wT=Math.max(TILE, Math.floor(w/TILE)*TILE); const hT=Math.max(TILE, Math.floor(h/TILE)*TILE);
-    const sx=Math.floor((w-wT)/2), sy=Math.floor((h-hT)/2);
-    work.width=wT; work.height=hT; wctx.clearRect(0,0,wT,hT); wctx.drawImage(bmp, sx,sy,wT,hT, 0,0,wT,hT);
-    naturalW=wT; naturalH=hT; cols=Math.floor(naturalW/TILE); rows=Math.floor(naturalH/TILE);
+    const scale=Math.min(1, LONG_EDGE/Math.max(w,h)); const w1=Math.max(TILE, Math.round(w*scale)); const h1=Math.max(TILE, Math.round(h*scale));
+    const tmp=document.createElement('canvas'); tmp.width=w1; tmp.height=h1; tmp.getContext('2d').drawImage(bmp,0,0,w1,h1);
+    const wT = Math.max(TILE, Math.floor(w1/TILE)*TILE); const hT = Math.max(TILE, Math.floor(h1/TILE)*TILE);
+    const sx=Math.floor((w1-wT)/2), sy=Math.floor((h1-hT)/2);
+    work.width=wT; work.height=hT; wctx.clearRect(0,0,wT,hT); wctx.drawImage(tmp, sx,sy,wT,hT, 0,0,wT,hT);
+    naturalW=wT; naturalH=hT; cols=Math.floor(wT/TILE); rows=Math.floor(hT/TILE);
   }
 
-  function drawTile(srcX,srcY, dstX,dstY, rot){
-    const s=TILE;
-    wctx.save();
-    // Move to dest tile origin
-    wctx.translate(dstX+s/2, dstY+s/2);
-    wctx.rotate((rot%4)*Math.PI/2);
-    // After rotation, the source draw needs to be centered; rotate affects axes
-    wctx.drawImage(work._src, srcX, srcY, s, s, -s/2, -s/2, s, s);
-    wctx.restore();
-  }
+  async function drawBitmap(bmp){ normalizeIntoWork(bmp); hasImage=true; encoded=false; plan=null; redraw(); updateButtons(); }
 
-  function encodeTiles(){
-    // Copy source to an auxiliary canvas for reads
-    const src=document.createElement('canvas'); src.width=naturalW; src.height=naturalH; src.getContext('2d').drawImage(work,0,0);
-    work._src = src; // attach for drawTile
+  // Encode/Decode
+  function encodeTiles(){ if(!hasImage||encoded) return; const src=document.createElement('canvas'); src.width=naturalW; src.height=naturalH; src.getContext('2d').drawImage(work,0,0); const out=document.createElement('canvas'); out.width=naturalW; out.height=naturalH; const ox=out.getContext('2d'); plan=makePlan(cols,rows); const n=cols*rows,s=TILE; for(let i=0;i<n;i++){ const srcIdx=i, dstIdx=plan.order[i], r=plan.rot[i]; const sx=(srcIdx%cols)*s, sy=Math.floor(srcIdx/cols)*s; const dx=(dstIdx%cols)*s, dy=Math.floor(dstIdx/cols)*s; ox.save(); ox.translate(dx+s/2, dy+s/2); ox.rotate((r%4)*Math.PI/2); ox.drawImage(src, sx,sy,s,s, -s/2,-s/2,s,s); ox.restore(); } wctx.clearRect(0,0,naturalW,naturalH); wctx.drawImage(out,0,0); encoded=true; redraw(); }
+  function decodeTiles(){ if(!hasImage||!encoded){ /* allow trying decode anyway with same plan */ } if(!plan) plan=makePlan(cols,rows); const src=document.createElement('canvas'); src.width=naturalW; src.height=naturalH; src.getContext('2d').drawImage(work,0,0); const out=document.createElement('canvas'); out.width=naturalW; out.height=naturalH; const ox=out.getContext('2d'); const n=cols*rows,s=TILE; for(let i=0;i<n;i++){ const srcIdx=plan.order[i], dstIdx=i, r=(4-(plan.rot[i]%4))%4; const sx=(srcIdx%cols)*s, sy=Math.floor(srcIdx/cols)*s; const dx=(dstIdx%cols)*s, dy=Math.floor(dstIdx/cols)*s; ox.save(); ox.translate(dx+s/2, dy+s/2); ox.rotate(r*Math.PI/2); ox.drawImage(src, sx,sy,s,s, -s/2,-s/2,s,s); ox.restore(); } wctx.clearRect(0,0,naturalW,naturalH); wctx.drawImage(out,0,0); encoded=false; redraw(); }
 
-    // Create fresh destination
-    const out=document.createElement('canvas'); out.width=naturalW; out.height=naturalH; const ox=out.getContext('2d');
+  // Share (normal JPEG for WhatsApp)
+  function shareNow(){ if(!hasImage) return showToast('Nothing to share'); try{ work.toBlob(async blob=>{ if(!blob){ showToast('Export failed'); return; } const file=new File([blob], encoded?'tile-encoded.jpg':'tile.jpg',{type:'image/jpeg'}); try{ if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:'TilePad'}); } else { const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=file.name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),800); showToast('Downloaded'); } }catch(e){ console.error(e); showToast('Share failed'); } }, 'image/jpeg', 0.92); }catch(e){ console.error(e); showToast('Export error'); } }
 
-    plan = makePlan(cols, rows);
-    const n=cols*rows; const s=TILE;
-    for (let idx=0; idx<n; idx++){
-      const srcIdx = idx;                 // source tile index in row-major
-      const dstIdx = plan.order[idx];     // where it should land
-      const r = plan.rot[idx];
-      const sx = (srcIdx % cols) * s; const sy = Math.floor(srcIdx/cols) * s;
-      const dx = (dstIdx % cols) * s; const dy = Math.floor(dstIdx/cols) * s;
-      // draw src tile rotated into out at (dx,dy)
-      ox.save();
-      ox.translate(dx+s/2, dy+s/2);
-      ox.rotate((r%4)*Math.PI/2);
-      ox.drawImage(src, sx, sy, s, s, -s/2, -s/2, s, s);
-      ox.restore();
-    }
-
-    // Replace work with out
-    wctx.clearRect(0,0,naturalW,naturalH);
-    wctx.drawImage(out,0,0);
-    encoded=true; setStatus('Image encoded (tile shuffle)'); redraw();
-  }
-
-  function decodeTiles(){
-    if (!plan){ plan = makePlan(cols, rows); }
-    const src=document.createElement('canvas'); src.width=naturalW; src.height=naturalH; src.getContext('2d').drawImage(work,0,0);
-    const out=document.createElement('canvas'); out.width=naturalW; out.height=naturalH; const ox=out.getContext('2d');
-
-    const n=cols*rows; const s=TILE;
-    for (let idx=0; idx<n; idx++){
-      const srcIdx = plan.order[idx]; // encoded tile position
-      const dstIdx = idx;             // original position
-      const r = (4 - (plan.rot[idx]%4)) % 4; // inverse rotation
-      const sx = (srcIdx % cols) * s; const sy = Math.floor(srcIdx/cols) * s;
-      const dx = (dstIdx % cols) * s; const dy = Math.floor(dstIdx/cols) * s;
-      ox.save();
-      ox.translate(dx+s/2, dy+s/2);
-      ox.rotate(r*Math.PI/2);
-      ox.drawImage(src, sx, sy, s, s, -s/2, -s/2, s, s);
-      ox.restore();
-    }
-
-    wctx.clearRect(0,0,naturalW,naturalH);
-    wctx.drawImage(out,0,0);
-    encoded=false; setStatus('Image decoded (tiles restored)'); redraw();
-  }
-
-  async function drawBitmap(bmp){
-    if (normalizeChk.checked) normalizeImage(bmp); else loadExact(bmp);
-    dim.textContent = `${naturalW}×${naturalH}px | ${cols}×${rows} tiles`;
-    hasImage = true; encoded=false; redraw();
-    const ph = document.getElementById('placeholder'); if (ph) ph.style.display='none';
-    updateButtons();
-  }
-
-  async function loadFile(file){
-    if (!file) return;
-    try{
-      const url = URL.createObjectURL(file);
-      const bmp = await (window.createImageBitmap ? createImageBitmap(file) : new Promise((res,rej)=>{const img=new Image(); img.onload=()=>res(img); img.onerror=rej; img.src=url;}));
-      URL.revokeObjectURL(url);
-      await drawBitmap(bmp);
-      setStatus(`Loaded: ${file.name}`);
-    }catch(err){ console.error(err); showToast('Failed to load image'); }
-  }
-
-  function updateButtons(){
-    btnEncode.disabled = !hasImage;
-    btnDecode.disabled = !hasImage;
-    btnShare.disabled  = !hasImage;
-    btnReset.disabled  = !hasImage;
-    const ph = document.getElementById('placeholder'); if (ph) ph.style.display = hasImage ? 'none' : 'flex';
-  }
-
-  // --- Share as normal photo (JPEG) ---
-  async function shareNow(){
-    if (!hasImage){ showToast('Nothing to share'); return; }
-    // Export as JPEG (WhatsApp will re-JPEG but keep size)
-    work.toBlob(async blob=>{
-      const file = new File([blob], encoded ? 'tile-encoded.jpg' : 'tile.jpg', { type:'image/jpeg' });
-      try{
-        if (navigator.share && navigator.canShare && navigator.canShare({ files:[file] })){
-          await navigator.share({ files:[file], title:'TilePad', text: encoded ? 'Tile-encoded image' : 'Image' });
-        }else{
-          const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=file.name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),800); showToast('Downloaded JPEG');
-        }
-      }catch(e){ console.error(e); showToast('Share failed'); }
-    }, 'image/jpeg', 0.92);
-  }
-
-  // --- Reset & listeners ---
-  function resetAll(){
-    if (!hasImage){ setStatus('No image loaded'); return; }
-    wctx.clearRect(0,0,work.width,work.height); ctx.clearRect(0,0,canvas.width,canvas.height);
-    hasImage=false; encoded=false; naturalW=naturalH=cols=rows=0; plan=null; dim.textContent='–'; updateButtons(); setStatus('Reset complete');
-    const ph = document.getElementById('placeholder'); if (ph) ph.style.display='flex';
-  }
-
+  // Handlers
   btnUpload.addEventListener('click', ()=> input.click());
-  input.addEventListener('change', e=>{ loadFile(e.target.files[0]); });
-  btnEncode.addEventListener('click', ()=>{ if(!hasImage) return; encodeTiles(); updateButtons(); });
-  btnDecode.addEventListener('click', ()=>{ if(!hasImage) return; decodeTiles(); updateButtons(); });
+  input.addEventListener('change', async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return; try{ const bmp=await loadBitmapFromFile(f); await drawBitmap(bmp); }catch(err){ console.error(err); showToast('Could not open image'); } finally { updateButtons(); }});
+  btnEncode.addEventListener('click', ()=>{ if(!hasImage) return; try{ encodeTiles(); }catch(e){ console.error(e); showToast('Encode failed'); } });
+  btnDecode.addEventListener('click', ()=>{ if(!hasImage) return; try{ decodeTiles(); }catch(e){ console.error(e); showToast('Decode failed'); } });
   btnShare .addEventListener('click', shareNow);
-  btnReset .addEventListener('click', resetAll);
-  window.addEventListener('resize', ()=>{ if(hasImage) redraw(); });
 
-  // --- Self tests ---
-  function arraysEqual(a,b){ if(a.length!==b.length) return false; for(let i=0;i<a.length;i++){ if(a[i]!==b[i]) return false; } return true; }
-  function testRoundTrip(){
-    const w=256,h=192; const c=document.createElement('canvas'); c.width=w; c.height=h; const x=c.getContext('2d');
-    // Draw pattern
-    const img=x.createImageData(w,h);
-    for(let y=0;y<h;y++) for(let q=0;q<w;q++){ const i=(y*w+q)*4; img.data[i]=q%256; img.data[i+1]=y%256; img.data[i+2]=(q^y)%256; img.data[i+3]=255; }
-    x.putImageData(img,0,0);
-
-    // Load into app pipeline
-    loadExact(c); const before=wctx.getImageData(0,0,work.width,work.height);
-    encodeTiles(); decodeTiles();
-    const after=wctx.getImageData(0,0,work.width,work.height);
-    return arraysEqual(before.data, after.data);
-  }
-  btnTests.addEventListener('click', ()=>{
-    const ok = testRoundTrip();
-    alert((ok?'✅':'❌') + ' Round-trip encode/decode ' + (ok?'passed':'failed'));
+  // Resize
+  // Resize & safe-area aware toolbar height
+  window.addEventListener('resize', ()=>{ redraw(); }, {passive:true});
+  const ro = new ResizeObserver(()=>{
+    if(!toolbar) return;
+    const tb = toolbar.getBoundingClientRect().height;
+    document.documentElement.style.setProperty('--tb', Math.ceil(tb) + 'px');
+    redraw();
   });
-
-  // Init
-  updateButtons();
+  if (toolbar) ro.observe(toolbar);
+  const ro2 = new ResizeObserver(()=>{ redraw(); });
+  if (frame) ro2.observe(frame);
 })();
 </script>
 </body>
