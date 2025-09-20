@@ -18,13 +18,13 @@
   }
   .app{ height:100%; display:flex; flex-direction:column; overflow:hidden; }
   #stage{ flex:1; display:flex; align-items:center; justify-content:center; padding: var(--pad); overflow:hidden; }
-  .stage-card{ display:flex; flex-direction:column; align-items:center; max-width: 100%;
+  .stage-card{ display:flex; flex-direction:column; align-items:center; max-width:100%;
     background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.00));
     border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 14px;
     box-shadow: 0 10px 30px rgba(0,0,0,.35); backdrop-filter: blur(6px);
   }
   canvas{ display:block; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background:#0b0e15; margin:0; max-width:100%; max-height:100%; }
-  #hint{ margin-top:10px; color:var(--muted); font-size:12.5px; text-align:center; }
+  #hint{ margin-top:10px; color:var(--muted); font-size:12.5px; text-align:center; min-height:1.5em; }
   #bar{ position: fixed; left:0; right:0; bottom:0; display:flex; gap:8px; flex-wrap:nowrap; justify-content:space-between; align-items:center;
     padding: clamp(6px, 1.2vh, 10px) clamp(var(--pad), 3vw, 20px) calc(clamp(6px,1.2vh,10px) + env(safe-area-inset-bottom));
     background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--bar);
@@ -64,10 +64,14 @@
   </div>
 
 <script>
-// ===== Fixed key (use this same value on all devices) =====
+// ===== Fixed key (same on all devices) =====
 const SEED_8_DIGITS = 12345678;
 
-// DOM
+// ===== Safety caps for very large photos =====
+const MAX_BACKING_PIXELS = 25_000_000;  // ~25 MP
+const MAX_BACKING_SIDE   = 8192;        // per-side cap
+
+// ===== DOM =====
 const fileInput = document.getElementById('file');
 const canvas    = document.getElementById('canvas');
 const ctx       = canvas.getContext('2d', { willReadFrequently: true });
@@ -80,83 +84,156 @@ const stage     = document.getElementById('stage');
 const bar       = document.getElementById('bar');
 const card      = document.getElementById('card');
 
-// State
-let hasImage = false, isScrambled = null, imgW = 0, imgH = 0;
+// ===== State =====
+let hasImage = false, isScrambled = null, imgW = 0, imgH = 0, busy = false;
 let dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
 
-// Masks
+// ===== Endianness masks =====
 const LITTLE   = new Uint8Array(new Uint32Array([0x01020304]).buffer)[0] === 0x04;
 const RGB_MASK = LITTLE ? 0x00FFFFFF : 0xFFFFFF00;
 const A_MASK   = LITTLE ? 0xFF000000 : 0x000000FF;
 
-// PRNG
-function makeXorShift32(seed) { let x = (seed >>> 0) || 0x6D2B79F5; return () => { x^=(x<<13); x^=(x>>>17); x^=(x<<5); return x>>>0; }; }
+// ===== PRNG =====
+function makeXorShift32(seed) { let x=(seed>>>0)||0x6D2B79F5; return ()=>{ x^=(x<<13); x^=(x>>>17); x^=(x<<5); return x>>>0; }; }
 
-// Scramble/descramble
-function applyScramble(seed){
-  const img = ctx.getImageData(0,0,canvas.width,canvas.height);
-  const u32 = new Uint32Array(img.data.buffer, 0, img.data.length>>>2);
+// ===== Async scramble/descramble (non-blocking UI) =====
+async function applyScrambleAsync(seed) {
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const u32 = new Uint32Array(img.data.buffer, 0, img.data.length >>> 2);
   const next32 = makeXorShift32(seed);
-  for (let i=0;i<u32.length;i++){ const r=next32(); u32[i]=(u32[i]&A_MASK)|((u32[i]^r)&RGB_MASK); }
-  ctx.putImageData(img,0,0);
+
+  const BATCH = 2_000_000; // ~2M pixels per chunk
+  const total = u32.length;
+  let i = 0;
+  const t0 = performance.now();
+  while (i < total) {
+    const end = Math.min(i + BATCH, total);
+    for (; i < end; i++) {
+      const r = next32();
+      u32[i] = (u32[i] & A_MASK) | ((u32[i] ^ r) & RGB_MASK);
+    }
+    hint.textContent = `Processing… ${Math.floor((i/total)*100)}%`;
+    await new Promise(requestAnimationFrame);
+  }
+  ctx.putImageData(img, 0, 0);
+  hint.textContent = `Done in ${Math.max(1, Math.round(performance.now()-t0))} ms`;
 }
 
-// Buttons
+// ===== Busy guard =====
+async function runBusy(label, fn){
+  if (busy) return;
+  busy = true;
+  const prevHint = hint.textContent;
+  // lock buttons while work runs
+  const prev = { e: encodeBtn.disabled, d: decodeBtn.disabled, s: shareBtn.disabled, r: resetBtn.disabled };
+  encodeBtn.disabled = decodeBtn.disabled = shareBtn.disabled = resetBtn.disabled = true;
+  hint.textContent = label;
+  try { await fn(); }
+  finally {
+    busy = false;
+    // restore by state
+    setButtons();
+    if (hint.textContent.startsWith('Processing…')) hint.textContent = prevHint;
+  }
+}
+
+// ===== Buttons =====
 function setButtons(){
   if(!hasImage){ encodeBtn.disabled=decodeBtn.disabled=shareBtn.disabled=resetBtn.disabled=true; return; }
-  if(isScrambled===null){ encodeBtn.disabled=false; decodeBtn.disabled=false; } else { encodeBtn.disabled=isScrambled; decodeBtn.disabled=!isScrambled; }
+  if(isScrambled===null){ encodeBtn.disabled=false; decodeBtn.disabled=false; }
+  else { encodeBtn.disabled=isScrambled; decodeBtn.disabled=!isScrambled; }
   shareBtn.disabled=false; resetBtn.disabled=false;
 }
 
-// Layout
+// ===== Layout =====
 function px(n){ return isNaN(n)?0:n; }
 function getBoxSpacing(el){ const s=getComputedStyle(el); return {
-  pl:px(parseFloat(s.paddingLeft)), pr:px(parseFloat(s.paddingRight)), pt:px(parseFloat(s.paddingTop)), pb:px(parseFloat(s.paddingBottom)),
-  bl:px(parseFloat(s.borderLeftWidth)), br:px(parseFloat(s.borderRightWidth)), bt:px(parseFloat(s.borderTopWidth)), bb:px(parseFloat(s.borderBottomWidth))
+  pl:px(parseFloat(s.paddingLeft)), pr:px(parseFloat(s.paddingRight)),
+  pt:px(parseFloat(s.paddingTop)),  pb:px(parseFloat(s.paddingBottom)),
+  bl:px(parseFloat(s.borderLeftWidth)), br:px(parseFloat(s.borderRightWidth)),
+  bt:px(parseFloat(s.borderTopWidth)), bb:px(parseFloat(s.borderBottomWidth)),
 };}
 function sizeViewerToImage(){
-  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
-  const barH = bar.getBoundingClientRect().height, sb=getBoxSpacing(stage), cb=getBoxSpacing(card), hintH = hint.getBoundingClientRect().height||0;
-  const availW = Math.max(1, vw - (sb.pl+sb.pr) - (cb.pl+cb.pr) - (cb.bl+cb.br) - 2);
-  const availH = Math.max(1, vh - barH - (sb.pt+sb.pb) - (cb.pt+cb.pb) - (cb.bt+cb.bb) - hintH - 8);
+  const vw=document.documentElement.clientWidth, vh=document.documentElement.clientHeight;
+  const barH=bar.getBoundingClientRect().height, sb=getBoxSpacing(stage), cb=getBoxSpacing(card), hintH=hint.getBoundingClientRect().height||0;
+  const availW=Math.max(1, vw - (sb.pl+sb.pr) - (cb.pl+cb.pr) - (cb.bl+cb.br) - 2);
+  const availH=Math.max(1, vh - barH - (sb.pt+sb.pb) - (cb.pt+cb.pb) - (cb.bt+cb.bb) - hintH - 8);
   if(!imgW||!imgH){ canvas.style.width=Math.max(120,Math.floor(Math.min(availW,520)))+'px'; canvas.style.height=Math.max(90,Math.floor(Math.min(availH,320)))+'px'; return; }
   const scale = Math.min(availW/imgW, availH/imgH, 1);
   canvas.style.width  = Math.floor(imgW*scale)+'px';
   canvas.style.height = Math.floor(imgH*scale)+'px';
 }
-function adjustStagePadding(){ stage.style.paddingBottom = (bar.getBoundingClientRect().height + 6) + 'px'; sizeViewerToImage(); }
+function adjustStagePadding(){ stage.style.paddingBottom=(bar.getBoundingClientRect().height+6)+'px'; sizeViewerToImage(); }
 window.addEventListener('resize', ()=>{ dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1)); adjustStagePadding(); });
 window.addEventListener('orientationchange', ()=>setTimeout(()=>{ dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1)); adjustStagePadding(); },60));
 
-// Hi-DPI draw
+// ===== Hi-DPI draw with safety caps =====
 function drawImageHiDPI(img){
-  imgW=img.naturalWidth; imgH=img.naturalHeight;
-  canvas.width=Math.max(1,Math.floor(imgW*dpr)); canvas.height=Math.max(1,Math.floor(imgH*dpr));
-  ctx.setTransform(1,0,0,1,0,0); ctx.imageSmoothingEnabled=true; ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.drawImage(img,0,0,imgW,imgH); sizeViewerToImage();
+  imgW = img.naturalWidth; imgH = img.naturalHeight;
+
+  let scale = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const byPixels = Math.sqrt(MAX_BACKING_PIXELS / (imgW * imgH));
+  const bySide   = Math.min(MAX_BACKING_SIDE / imgW, MAX_BACKING_SIDE / imgH);
+  scale = Math.min(scale, byPixels, bySide);
+  scale = Math.max(1, scale);
+
+  const backW = Math.max(1, Math.floor(imgW * scale));
+  const backH = Math.max(1, Math.floor(imgH * scale));
+
+  canvas.width  = backW;
+  canvas.height = backH;
+
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.clearRect(0, 0, backW, backH);
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.drawImage(img, 0, 0, imgW, imgH);
+
+  sizeViewerToImage();
 }
 
-// Upload
+// ===== Upload (with HEIC/HEIF notice) =====
 fileInput.addEventListener('change', e=>{
   const file=e.target.files?.[0]; if(!file) return;
+
+  if (/image\/(heic|heif)/i.test(file.type)) {
+    hint.textContent = 'This photo is HEIC/HEIF and may not display everywhere. If it fails, export as JPEG/PNG.';
+  }
+
   const url=URL.createObjectURL(file); const img=new Image();
   img.onload=()=>{ drawImageHiDPI(img); hasImage=true; isScrambled=null; setButtons();
-    hint.textContent=`Loaded: ${file.name} (${imgW}×${imgH}). Choose Encode (original) or Decode (scrambled).`;
+    hint.textContent=`Loaded: ${file.name} (${imgW}×${imgH}). Choose Encode or Decode.`;
     URL.revokeObjectURL(url); fileInput.value=""; adjustStagePadding(); };
+  img.onerror=()=>{ hint.textContent='Could not display this image. If it is HEIC/HEIF, export it as JPEG/PNG and try again.'; URL.revokeObjectURL(url); fileInput.value=""; };
   img.src=url;
 });
 
-// Encode/Decode
-encodeBtn.addEventListener('click', ()=>{ if(!hasImage) return; applyScramble(SEED_8_DIGITS); isScrambled=true; setButtons(); hint.textContent='Scrambled. Share to send or Save Image.'; });
-decodeBtn.addEventListener('click', ()=>{ if(!hasImage) return; applyScramble(SEED_8_DIGITS); isScrambled=false; setButtons(); hint.textContent='Decoded (restored). Share if you want to save it.'; });
+// ===== Encode/Decode (async) =====
+encodeBtn.addEventListener('click', async ()=>{
+  if(!hasImage || busy) return;
+  await runBusy('Processing…', async ()=>{
+    await applyScrambleAsync(SEED_8_DIGITS);
+    isScrambled=true; setButtons(); hint.textContent='Scrambled. Share to send or Save Image.';
+  });
+});
+decodeBtn.addEventListener('click', async ()=>{
+  if(!hasImage || busy) return;
+  await runBusy('Processing…', async ()=>{
+    await applyScrambleAsync(SEED_8_DIGITS);
+    isScrambled=false; setButtons(); hint.textContent='Decoded (restored). Share if you want to save it.';
+  });
+});
 
-// Share (robust)
+// ===== Share (EXACT logic you shared) =====
 shareBtn.addEventListener('click', async ()=>{
   if(!hasImage) return;
   try{
     const blob = await new Promise(r=>canvas.toBlob(r,'image/png',1.0));
     // Try file share (supported on many iOS/Android versions; PWA context may vary)
-    if(navigator.canShare && (()=>{ try{ return navigator.canShare({ files:[new File([blob],'image.png',{type:'image/png'})] }); }catch{return false;} })()){
+    if(navigator.canShare && (()=>{
+      try{ return navigator.canShare({ files:[new File([blob],'image.png',{type:'image/png'})] }); }
+      catch{ return false; }
+    })()){
       const file = new File([blob],'image.png',{type:'image/png'});
       await navigator.share({ files:[file], title:'Image' });
       return;
@@ -172,8 +249,9 @@ shareBtn.addEventListener('click', async ()=>{
   }
 });
 
-// Reset
+// ===== Reset =====
 resetBtn.addEventListener('click', ()=>{
+  if (busy) return;
   hasImage=false; isScrambled=null; imgW=imgH=0;
   canvas.width=2; canvas.height=2; ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,canvas.width,canvas.height);
   fileInput.value=""; setButtons(); hint.textContent='Cleared. Upload an image to begin.'; adjustStagePadding();
