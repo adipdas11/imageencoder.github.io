@@ -22,8 +22,9 @@
     .viewer{position:relative;background:radial-gradient(1200px 400px at 50% -200px, rgba(124,58,237,.15), transparent),
                           radial-gradient(600px 200px at 10% 0, rgba(34,211,238,.1), transparent),
                           var(--card);
-            border:1px solid rgba(255,255,255,.06);border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.3)}
-    .viewer .toolbar{position:absolute;inset:auto 8px 8px 8px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+            border:1px solid rgba(255,255,255,.06);border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.3);
+            min-height:320px; padding-bottom:90px}
+    .viewer .toolbar{position:absolute;left:8px;right:8px;bottom:8px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 
     .btn{appearance:none;border:none;border-radius:14px;padding:12px 10px;font-weight:700;color:var(--text);
          background:linear-gradient(180deg,#1a2435,#141c2b);border:1px solid rgba(255,255,255,.08);
@@ -62,7 +63,8 @@
 
   <main class="stage" role="main">
     <section class="viewer" aria-label="Image viewer">
-      <canvas id="canvas" aria-label="Image canvas" width="0" height="0"></canvas>
+      <canvas id="canvas" aria-label="Image canvas" width="640" height="360"></canvas>
+      <div id="placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:600;letter-spacing:.2px;pointer-events:none">Tap <em style='color:var(--text);font-style:normal'>Upload</em> to start</div>
       <div class="toolbar">
         <button id="btnUpload" class="btn primary" title="Upload image">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -121,13 +123,11 @@
   function scrambleImageData(imgData){
     const p = prng(SEED ^ imgData.width ^ (imgData.height<<16) ^ KEY);
     const d = imgData.data;
-    // Iterate in RGBA steps. Keep alpha as-is to preserve transparency.
     for (let i=0;i<d.length;i+=4){
       const r = p.next().value;
       d[i]   = (d[i]   ^ ((r      ) & 0xFF))       >>> 0; // R
       d[i+1] = (d[i+1] ^ ((r >>> 8) & 0xFF))       >>> 0; // G
       d[i+2] = (d[i+2] ^ ((r >>>16) & 0xFF))       >>> 0; // B
-      // d[i+3] alpha channel left unchanged
     }
     return imgData;
   }
@@ -149,7 +149,7 @@
 
   let hasImage = false;
   let encoded = false; // whether the pixels currently on canvas are encoded
-  let originalBitmap = null; // ImageBitmap of the original (for Reset)
+  let originalBitmap = null; // ImageBitmap or Canvas of the original (for Reset)
   let naturalW = 0, naturalH = 0; // original pixel dimensions
 
   function showToast(text){
@@ -164,15 +164,19 @@
     btnDecode.disabled = !hasImage;
     btnShare.disabled  = !hasImage;
     btnReset.disabled  = !hasImage;
+    const ph = document.getElementById('placeholder');
+    if (ph) ph.style.display = hasImage ? 'none' : 'flex';
   }
 
   function setStatus(text){ status.textContent = text; }
 
   function fitToCanvas(w, h){
-    // Fit within viewport width with max height; keep aspect ratio
     const maxW = Math.min(window.innerWidth - 32, 2048); // safety cap
-    const maxH = Math.min(Math.max(window.innerHeight * 0.62, 280), 2400);
-    let scale = Math.min(maxW / w, maxH / h, 1);
+    const viewer = document.querySelector('.viewer');
+    const reserve = 96; // space for toolbar
+    const viewerH = Math.max((viewer?.clientHeight||360)-reserve, 280);
+    const maxH = Math.min(Math.max(window.innerHeight * 0.62, viewerH), 2400);
+    const scale = Math.min(maxW / w, maxH / h, 1);
     const cw = Math.max(1, Math.round(w * scale));
     const ch = Math.max(1, Math.round(h * scale));
     canvas.width = cw; canvas.height = ch;
@@ -181,7 +185,7 @@
   }
 
   async function drawBitmap(bmp){
-    naturalW = bmp.width; naturalH = bmp.height;
+    naturalW = (bmp.width||bmp.naturalWidth); naturalH = (bmp.height||bmp.naturalHeight);
     fitToCanvas(naturalW, naturalH);
     ctx.clearRect(0,0,canvas.width, canvas.height);
     ctx.drawImage(bmp, 0,0, canvas.width, canvas.height);
@@ -194,9 +198,14 @@
     const typeOk = file.type.startsWith('image/');
     if (!typeOk){ showToast('Not an image file'); return; }
     try{
-      const blobURL = URL.createObjectURL(file);
-      const bmp = await createImageBitmap(await fetch(blobURL).then(r=>r.blob()));
-      URL.revokeObjectURL(blobURL);
+      let bmp;
+      if (window.createImageBitmap){
+        bmp = await createImageBitmap(file);
+      } else {
+        // Fallback for older Safari
+        const blobURL = URL.createObjectURL(file);
+        bmp = await new Promise((resolve, reject)=>{ const img = new Image(); img.onload=()=>{ const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight; const x=c.getContext('2d'); x.drawImage(img,0,0); URL.revokeObjectURL(blobURL); resolve(c); }; img.onerror=reject; img.src=blobURL; });
+      }
       originalBitmap = bmp;
       await drawBitmap(bmp);
       setStatus(`Loaded: ${file.name}`);
@@ -227,17 +236,13 @@
   async function shareNow(){
     if (!hasImage){ showToast('Nothing to share'); return; }
     try{
-      // Export canvas as PNG (lossless ensures decode works perfectly)
       const blob = await new Promise(res => canvas.toBlob(res, 'image/png', 1));
       const file = new File([blob], encoded ? 'image-encoded.png' : 'image.png', { type: 'image/png' });
       if (navigator.canShare && navigator.canShare({ files:[file] }) && navigator.share){
         await navigator.share({ files:[file], title: 'StegoPad image', text: encoded ? 'Encoded image' : 'Image' });
       }else{
-        // Fallback: download the file
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = file.name; a.click();
-        URL.revokeObjectURL(url);
+        const a = document.createElement('a'); a.href = url; a.download = file.name; a.click(); URL.revokeObjectURL(url);
         showToast('Download started (sharing not supported)');
       }
     }catch(err){ console.error(err); showToast('Share failed'); }
@@ -248,7 +253,6 @@
     try{
       if (originalBitmap){ await drawBitmap(originalBitmap); }
       ctx.clearRect(0,0,canvas.width, canvas.height);
-      canvas.width = 0; canvas.height = 0;
       hasImage = false; encoded = false; originalBitmap = null; dim.textContent = '–';
       updateButtons(); setStatus('Reset complete');
     }catch(err){ console.error(err); }
@@ -262,7 +266,7 @@
   btnShare.addEventListener('click', shareNow);
   btnReset.addEventListener('click', resetAll);
 
-  // Drag & drop (works best on desktop; harmless on iOS)
+  // Drag & drop (desktop convenience)
   ;['dragenter','dragover'].forEach(ev=>document.addEventListener(ev, e=>{e.preventDefault();e.dataTransfer&& (e.dataTransfer.dropEffect='copy');}))
   document.addEventListener('drop', e=>{e.preventDefault(); if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);});
 
